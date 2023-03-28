@@ -1,7 +1,9 @@
-# These should be parameterized later
-name = '<CRYPTOARSENAL_NAME>'
-token = '<CRYPTOARSENAL_TOKEN>'
-trade_size = "<TRADE_SIZE>"  # generally 0.001
+# These should be parametarized later
+name = ''
+token = ''
+trade_size = "0.01" # for OKX
+fee = 0.05/100  # fee for OKX, 0.04 for binance
+capital = 5000  # initial capital/budget
 
 crypto_arsenal_payload = {
     "open_long": {"log": "{{time}} Open Long  *#{{ticker}}* at `{{close}}`", "fixed": trade_size, "action": "openLong",
