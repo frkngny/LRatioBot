@@ -5,10 +5,9 @@ import pandas as pd
 from Utilities import COLUMNS
 
 
-# We use selenium to get price and l-ratio from coinglass
 class SScraper:
     def __init__(self):
-
+        
         # page to get l-ratio
         self.l_ratio_driver = webdriver.Chrome(r'C://chromedriver//chromedriver.exe')
         self.l_ratio_driver.get("https://www.coinglass.com/en/LongShortRatio")
@@ -16,11 +15,11 @@ class SScraper:
         self.ls_rate_class = "bybt-ls-rate"  # this is the class of the html tag which keeps related information
         self.LSRatioMap = {"Overall": 0, "Binance": 1, "OKX": 2}  # tag indexes
         self.LSPositionMap = {"Long": 0, "Short": 1}  # position indexes
-
+        
         # page to get price
         self.price_driver = webdriver.Chrome(r'C://chromedriver//chromedriver.exe')
         self.price_driver.get("https://www.coinglass.com")
-        self.PriceMap = {"Binance": 16}  # index of the tag in html
+        self.PriceMap = {"Binance": 16, "Bitget": 40, "OKX": 52, "Huobi": 174}  # index of the tag in html BTC-USDT
         self.price_class = "ant-table-cell"  # class of the html tag which keeps related info
 
         self.symbol = "BTC"
@@ -32,23 +31,23 @@ class SScraper:
     def store_data(self, csv_file: str):
         self.csv_file = csv_file
         nowtime = int(time.time() * 1000)
-
+        
         # get the div where ls rate information lays
-        ls_rates = self.l_ratio_driver.find_elements(By.CLASS_NAME, self.ls_rate_class)[self.LSRatioMap["Binance"]]
-        l_rate_div = ls_rates.find_elements(By.TAG_NAME, "div")[self.LSPositionMap["Long"]]  # get l ratio tag
+        ls_rates = self.l_ratio_driver.find_elements(By.CLASS_NAME, self.ls_rate_class)[self.LSRatioMap["OKX"]]
+        l_rate_div = ls_rates.find_elements(By.TAG_NAME, "div")[self.LSPositionMap["Long"]]
         l_ratio = float(l_rate_div.text.replace('%', '')) / 100
-
+        
         # same for price
-        prices = self.price_driver.find_elements(By.CLASS_NAME, self.price_class)[self.PriceMap["Binance"]]
+        prices = self.price_driver.find_elements(By.CLASS_NAME, self.price_class)[self.PriceMap["OKX"]]
         price = prices.find_elements(By.TAG_NAME, "div")[0]
         price = float(price.text.replace('$', ''))
-
+        
         # create dataframe
         self.data[COLUMNS.TIME] = nowtime
         self.data[COLUMNS.SYMBOL] = self.symbol
         self.data[COLUMNS.LRATIO] = l_ratio
         self.data[COLUMNS.PRICE] = price
-
+        
         # write into csv
         df1 = pd.read_csv(self.csv_file)
         df2 = pd.DataFrame()
