@@ -4,6 +4,7 @@ import copy
 import pandas as pd
 from CryptoArsenal import CryptoArsenal
 from Logger import Logger
+from creds.keys import trade_size, fee, capital
 
 
 class Signals:
@@ -11,7 +12,6 @@ class Signals:
     SELL = "sell"
 
 
-# This class is to make trades (open or close position) regarding to conditions
 class Trader:
     def __init__(self, stored_csv):
         self.time_col = COLUMNS.TIME
@@ -31,16 +31,15 @@ class Trader:
 
         self.long_stocks = {"times": [], "prices": []}
         self.short_stocks = {"times": [], "prices": []}
-
+        
         # define parameters for trades
-        self.budget = 500
+        self.budget = capital
+        self.buy_percent = float(trade_size)
+        self.fee = fee
         self.stop_loss = 0.995
         self.pf = 1.5  # profit factor
-        self.buy_percent = 0.001  # buy percent, for OKX 0.01
-        self.fee = 0.04/100     # fee is 0.05 percent for OKX
-
         self.sma = 30  # moving average window
-
+        
         self.total_profit = 0
         self.plus_profits = 0
         self.minus_profits = 0
@@ -48,7 +47,7 @@ class Trader:
         self.num_trades = 0
 
     def start_trade(self, current_data, decider_data):
-        ma_calculated = self.calc_ma(decider_data[-self.sma:], self.sma).iloc[-1]
+        moving_avg = self.calc_ma(decider_data[-self.sma:], self.sma).iloc[-1]
 
         temp_decider = copy.deepcopy(decider_data)
         temp_decider.drop(temp_decider.tail(1).index, inplace=True)
@@ -63,13 +62,13 @@ class Trader:
         print(f"Current time: {data_time}, price: {data_price}, signal: {data_signal}")
         flag = False
         if data_signal == Signals.BUY:
-            # Signal is BUY
+             # Signal is BUY
 
-            # if we have budget and ma is lower than current l-ratio, open long position
-            cond = ma_calculated < data_l_ratio
+            # if we have budget and ma is lower than current price, open long position
+            cond = moving_avg < (data_price / self.buy_percent)
             if data_price <= self.budget and cond:
                 flag = self.buy_long(data_price, data_time)
-
+            
             # if there are any short contracts, calculate profit factor and profit (if sold now) for each contract
             # if profit factor is greater than self.pf (1.5); for each contract, if profit is greater
             # than contract price * (1-stop_loss), which is contract price * 0.005, then close short position
@@ -101,12 +100,12 @@ class Trader:
                             profits.pop(index)
                         else:
                             index += 1
-
-            # if we have budget and ma is greater than current l-ratio, open short position
-            cond1 = ma_calculated > data_l_ratio
+            
+            # if we have budget and ma is greater than current price, open short position
+            cond1 = moving_avg > (data_price / self.buy_percent)
             if cond1 and data_price <= self.budget:
                 flag = self.buy_short(data_price, data_time)
-
+        
         # stop loss (close position) for long positions if reached defined stop loss
         long_len = len(self.long_stocks["prices"])
         index = 0
@@ -115,7 +114,7 @@ class Trader:
                 flag = self.long_cut_loss(data_price, data_time, index)
             else:
                 index += 1
-
+        
         # stop loss (close position) for short positions if reached defined stop loss
         short_len = len(self.short_stocks["prices"])
         index = 0
@@ -134,9 +133,9 @@ class Trader:
             print(f"M Profit: {self.minus_profits}")
             print(f"Trades: {self.num_trades}")
             self.logger.log(f"Longs: {self.long_stocks}\nShorts: {self.short_stocks}")
-
+            
             # remove the fee for the trade from current budget
-            self.budget -= data_price * self.fee
+            self.budget -= (data_price * self.fee)
 
     def calc_ma(self, decider: pd.DataFrame, period: int):
         """
@@ -145,17 +144,17 @@ class Trader:
         :param period: window
         :return: SMA mean
         """
-        return decider[self.l_ratio].rolling(window=period).mean()
+        return decider[self.price_col].rolling(window=period).mean()
 
     def buy_long(self, p, t):
         r = self.cryptoArsenal.send_webhook_request("open_long", str(t).replace(".0", ""))
         if r == "ok":
-            print(f"{BGColors.BLUE}Open long {p} at {t} {BGColors.ENDC}")
-
-            # store the position
+            print(f"{BGColors.BLUE}Buy long {p} at {t} {BGColors.ENDC}")
+            
+             # store the position
             self.long_stocks["prices"].append(p)
             self.long_stocks["times"].append(t)
-
+            
             # update stored csv file with position
             stored_data = pd.read_csv(self.stored_data_csv)
             stored_data.loc[stored_data[self.time_col] == t, self.position_col] = "long"
@@ -174,8 +173,8 @@ class Trader:
             stock_time = self.long_stocks['times'][i]
             prof = p - stock_price
 
-            print(f"{BGColors.HBLUE}Close long {stock_price} at {p} with profit: {prof} {BGColors.ENDC}")
-
+            print(f"{BGColors.HBLUE}Sell long {stock_price} at {p} with profit: {prof} {BGColors.ENDC}")
+            
             # update stored csv file with sold data
             stored_data = pd.read_csv(self.stored_data_csv)
             stored_data.loc[stored_data[self.time_col] == stock_time, "Sold_At"] = int(t)
@@ -188,10 +187,8 @@ class Trader:
             else:
                 self.minus_profits += prof
 
-            # remove contract info
             self.long_stocks['prices'].pop(i)
             self.long_stocks['times'].pop(i)
-
             self.num_trades += 1
             return True
         return False
@@ -215,7 +212,6 @@ class Trader:
 
             self.long_stocks['prices'].pop(i)
             self.long_stocks['times'].pop(i)
-
             self.num_trades += 1
             return True
         return False
@@ -223,7 +219,7 @@ class Trader:
     def buy_short(self, p, t):
         r = self.cryptoArsenal.send_webhook_request("open_short", str(t).replace(".0", ""))
         if r == "ok":
-            print(f"{BGColors.GREEN}Open short {p} at {t} {BGColors.ENDC}")
+            print(f"{BGColors.GREEN}Buy short {p} at {t} {BGColors.ENDC}")
 
             self.short_stocks['prices'].append(p)
             self.short_stocks['times'].append(t)
@@ -244,8 +240,7 @@ class Trader:
             stock_price = self.short_stocks["prices"][i]
             stock_time = self.short_stocks["times"][i]
             prof = stock_price - p
-
-            print(f"{BGColors.HGREEN}Close short {stock_price} at {p} with profit: {prof} {BGColors.ENDC}")
+            print(f"{BGColors.HGREEN}Sell short {stock_price} at {p} with profit: {prof} {BGColors.ENDC}")
 
             stored_data = pd.read_csv(self.stored_data_csv)
             stored_data.loc[stored_data[self.time_col] == stock_time, "Sold_At"] = int(t)
@@ -258,9 +253,7 @@ class Trader:
                 self.plus_profits += prof
             else:
                 self.minus_profits += prof
-
-            # self.logger.log(f"Close Short: {stock_price} at {stock_time}. Current budget: {self.budget}")
-
+            
             self.short_stocks['prices'].pop(i)
             self.short_stocks['times'].pop(i)
 
@@ -274,7 +267,6 @@ class Trader:
             stock_price = self.short_stocks["prices"][i]
             stock_time = self.short_stocks["times"][i]
             prof = stock_price - p
-
             print(f"{BGColors.RED}Short Cut loss == bought: {stock_price}, sold: {p}, loss: {prof} {BGColors.ENDC}")
 
             stored_data = pd.read_csv(self.stored_data_csv)
@@ -287,7 +279,6 @@ class Trader:
 
             self.short_stocks['prices'].pop(i)
             self.short_stocks['times'].pop(i)
-
             self.num_trades += 1
             return True
         return False
